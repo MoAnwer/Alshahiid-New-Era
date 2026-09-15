@@ -100,6 +100,31 @@ const stats = [
   { label: 'مصابو العمليات', value: '47', delta: '-2.1%', icon: 'activity', tone: 'rose', note: 'حالات قيد المتابعة' },
 ];
 
+const API_BASE = window.__API_BASE__ || (window.location.port === '3000' ? 'http://127.0.0.1:8000/api' : '/api');
+const formatDate = (value) => value ? new Intl.DateTimeFormat('ar', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(String(value).includes('T') ? value : `${value}T00:00:00`)) : '—';
+
+async function hydrateBackend() {
+  const [dashboard, martyrs, families, members, students, services] = await Promise.all([
+    fetch(`${API_BASE}/dashboard`).then(r => r.json()),
+    fetch(`${API_BASE}/martyrs`).then(r => r.json()),
+    fetch(`${API_BASE}/families`).then(r => r.json()),
+    fetch(`${API_BASE}/members`).then(r => r.json()),
+    fetch(`${API_BASE}/students`).then(r => r.json()),
+    fetch(`${API_BASE}/services`).then(r => r.json()),
+  ]);
+  moduleConfig.martyrs.rows = martyrs.map(item => [item.full_name, item.force, item.rank, formatDate(item.martyrdom_date), item.sector, item.status]);
+  moduleConfig.families.rows = families.map(item => [item.name, String(item.members_count ?? item.member_count), item.category, item.supervisor, item.locality, item.status]);
+  moduleConfig.members.rows = members.map(item => [item.full_name, item.relationship, String(item.age), item.national_id, item.family?.name || '—', item.insurance_status]);
+  moduleConfig.students.rows = students.map(item => [item.family_member?.full_name || '—', item.stage, item.grade, item.school, item.service_type || '—', item.status]);
+  moduleConfig.education.rows = services.map(item => [item.beneficiary, item.type, `${Number(item.estimated_amount || 0).toLocaleString('ar')} ج.س`, `${Number(item.funded_amount || 0).toLocaleString('ar')} ج.س`, formatDate(item.added_at), item.status]);
+  moduleConfig.care.rows = moduleConfig.education.rows;
+  stats[0].value = Number(dashboard.martyrs_count).toLocaleString('ar');
+  stats[1].value = Number(dashboard.families_count).toLocaleString('ar');
+  stats[2].value = Number(dashboard.students_count).toLocaleString('ar');
+  showToast(`تم الاتصال بالـ backend · ${dashboard.source}`);
+  render();
+}
+
 function navMarkup() {
   return navSections.map(section => `
     <div class="nav-section">
@@ -265,7 +290,7 @@ function bindEvents() {
   if (globalSearch) globalSearch.addEventListener('input', e => { state.search = e.target.value; if (state.active !== 'dashboard') render(); });
   if (moduleSearch) moduleSearch.addEventListener('input', e => { state.search = e.target.value; render(); });
   const loginForm = document.querySelector('#login-form');
-  if (loginForm) loginForm.addEventListener('submit', e => { e.preventDefault(); state.screen = 'app'; showToast('مرحباً بك، تم تسجيل الدخول بنجاح'); render(); });
+  if (loginForm) loginForm.addEventListener('submit', e => { e.preventDefault(); state.screen = 'app'; showToast('مرحباً بك، تم تسجيل الدخول بنجاح'); render(); hydrateBackend().catch(() => showToast('تعذر الاتصال بالـ backend؛ يتم عرض بيانات العرض المحلية')); });
   const recordForm = document.querySelector('#record-form');
   if (recordForm) recordForm.addEventListener('submit', e => { e.preventDefault(); closeModal(); showToast('تم حفظ السجل في المسودة المحلية'); });
   document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => { document.querySelectorAll('[data-tab]').forEach(tab => tab.classList.remove('active')); el.classList.add('active'); showToast(`تم تطبيق فلتر ${el.textContent.trim()}`); }));
